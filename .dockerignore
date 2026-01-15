@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.Python
+venv/
+env/
+ENV/
+
+# Virtual env
+.venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+
+# Source maps
+*.map
+
+# Build artifacts
+build/
+dist/
+
+# Tests
+test_*.py
+*_test.py

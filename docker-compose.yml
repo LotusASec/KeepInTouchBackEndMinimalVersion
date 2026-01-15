@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hayvan-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FORM_GEN_INTERVAL_HOURS=12
+    volumes:
+      - ./animal_tracking.db:/app/animal_tracking.db
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Optional: pgAdmin for debugging (remove if not needed)
+  # adminer:
+  #   image: adminer
+  #   container_name: hayvan-adminer
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     - api
+
+volumes:
+  db_data:
+    driver: local
