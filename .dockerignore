@@ -44,6 +44,6 @@ logs/
 build/
 dist/
 
-# Tests
+# Tests (keep smoke_test.py for container testing)
 test_*.py
-*_test.py
+# *_test.py  <- Commented out because it would ignore smoke_test.py

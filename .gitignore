@@ -41,3 +41,12 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Docker
+*.dockerignore.bak
+docker-compose.override.yml
+.docker/
+docker-volumes/
+
+# Docker data (but keep animal_tracking.db for development)
+# Note: animal_tracking.db already ignored above in Database section
