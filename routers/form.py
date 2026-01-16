@@ -12,23 +12,24 @@ router = APIRouter(prefix="/forms", tags=["forms"])
 
 
 def update_animal_from_latest_form(db: Session, animal_id: int):
-    """Hayvanın durumunu son gönderilen formdan güncelle (is_sent=True ve en yeni send_date)"""
+    """Hayvanın durumunu en son formdan güncelle - son form'un status'unu alır"""
     animal = db.query(models.Animal).filter(models.Animal.id == animal_id).first()
     if not animal:
         return
     
-    # Gönderilen en son formu getir (is_sent=True ve en yeni send_date)
-    latest_sent_form = db.query(models.Form).filter(
-        models.Form.animal_id == animal_id,
-        models.Form.is_sent == True
-    ).order_by(models.Form.send_date.desc()).first()
+    # En son formu getir (ID veya created_date'e göre)
+    latest_form = db.query(models.Form).filter(
+        models.Form.animal_id == animal_id
+    ).order_by(models.Form.id.desc()).first()
     
-    if latest_sent_form:
-        # Son gönderilen form durumunu hayvana aktar
-        animal.is_sent = latest_sent_form.is_sent
-        animal.is_controlled = latest_sent_form.is_controlled
-        animal.need_review = latest_sent_form.need_review
-        animal.last_form_sent_date = latest_sent_form.send_date
+    if latest_form:
+        # En son formun durumunu hayvana aktar
+        animal.form_status = latest_form.form_status
+        
+        # assigned_date varsa (form gönderildiyse) son gönderim tarihi güncelle
+        if latest_form.assigned_date:
+            animal.last_form_sent_date = latest_form.assigned_date
+        
         db.commit()
         db.refresh(animal)
 
@@ -53,9 +54,7 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
         if should_create:
             new_form = models.Form(
                 animal_id=animal.id,
-                is_sent=False,
-                is_controlled=False,
-                need_review=False,
+                form_status="created",
                 created_date=now
             )
             db.add(new_form)
@@ -147,24 +146,38 @@ def update_form(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Form bilgilerini güncelle - Form gönderildiğinde/kontrol edildiğinde otomatik tarih eklenir"""
+    """Form bilgilerini güncelle - Her durum değişiminde otomatik tarih eklenir
+    
+    Akış:
+    1. form_status=sent → assigned_date set (görev atama)
+    2. form_status=filled → filled_date set (dönüş alındı)
+    3. form_status=controlled → controlled_date set (incelendi)
+    """
     db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
     
     update_data = form_update.dict(exclude_unset=True)
     
-    # is_sent True yapıldığında send_date ve control_due_date otomatik set et
-    if "is_sent" in update_data and update_data["is_sent"] and not db_form.is_sent:
-        db_form.send_date = datetime.utcnow()
-        db_form.control_due_date = datetime.utcnow() + timedelta(days=7)
-    
-    # is_controlled True yapıldığında controlled_date set et
-    if "is_controlled" in update_data and update_data["is_controlled"] and not db_form.is_controlled:
-        db_form.controlled_date = datetime.utcnow()
-    
-    for field, value in update_data.items():
-        setattr(db_form, field, value)
+    # Form status'u güncelleniyor mu?
+    if "form_status" in update_data:
+        new_status = update_data["form_status"]
+        old_status = db_form.form_status
+        
+        # created → sent
+        if new_status == "sent" and old_status != "sent":
+            db_form.assigned_date = datetime.utcnow()
+            db_form.control_due_date = datetime.utcnow() + timedelta(days=7)
+        
+        # sent → filled
+        elif new_status == "filled" and old_status != "filled":
+            db_form.filled_date = datetime.utcnow()
+        
+        # filled → controlled
+        elif new_status == "controlled" and old_status != "controlled":
+            db_form.controlled_date = datetime.utcnow()
+        
+        db_form.form_status = new_status
     
     db.commit()
     db.refresh(db_form)
@@ -186,9 +199,11 @@ def delete_form(
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
     
+    animal_id = db_form.animal_id
+    
     # Remove form_id from animal's form_ids list
     db_animal = db.query(models.Animal).filter(
-        models.Animal.id == db_form.animal_id
+        models.Animal.id == animal_id
     ).first()
     if db_animal and db_animal.form_ids and form_id in db_animal.form_ids:
         current_form_ids = db_animal.form_ids
@@ -198,6 +213,10 @@ def delete_form(
     
     db.delete(db_form)
     db.commit()
+    
+    # Hayvanın durumunu kalan formlardan güncelle
+    update_animal_from_latest_form(db, animal_id)
+    
     return None
 
 
@@ -213,23 +232,13 @@ def generate_periodic_forms(
     return run_periodic_form_generation(db)
 
 
-@router.get("/need-review", response_model=List[schemas.Form])
-def get_forms_need_review(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Review gerektiren formları getir (need_review=True)"""
-    forms = db.query(models.Form).filter(models.Form.need_review == True).all()
-    return forms
-
-
 @router.get("/pending-send", response_model=List[schemas.Form])
 def get_forms_pending_send(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Henüz gönderilmemiş formları getir (is_sent=False)"""
-    forms = db.query(models.Form).filter(models.Form.is_sent == False).all()
+    """Henüz görev verilmemiş formları getir (form_status=created)"""
+    forms = db.query(models.Form).filter(models.Form.form_status == "created").all()
     return forms
 
 
@@ -238,11 +247,21 @@ def get_forms_pending_control(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Kontrol edilmesi gereken formları getir (control_due_date geçmiş ve is_controlled=False)"""
-    now = datetime.now()
+    """Kontrol edilmesi gereken formları getir (form_status=filled)"""
+    forms = db.query(models.Form).filter(models.Form.form_status == "filled").all()
+    return forms
+
+
+@router.get("/pending-fill", response_model=List[schemas.Form])
+def get_forms_pending_fill(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Doldurulması gereken formları getir (form_status=sent ve control_due_date'ten önce)"""
+    now = datetime.utcnow()
     forms = db.query(models.Form).filter(
-        models.Form.control_due_date <= now,
-        models.Form.is_controlled == False
+        models.Form.form_status == "sent",
+        models.Form.control_due_date > now
     ).all()
     return forms
 

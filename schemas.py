@@ -52,18 +52,13 @@ class AnimalUpdate(BaseModel):
     owner_contact_number: Optional[str] = None
     owner_contact_email: Optional[EmailStr] = None
     form_generation_period: Optional[int] = None
-    is_sent: Optional[bool] = None
-    is_controlled: Optional[bool] = None
-    need_review: Optional[bool] = None
     last_form_sent_date: Optional[datetime] = None
 
 
 class Animal(AnimalBase):
     id: int
     form_ids: List[int] = []
-    is_controlled: bool = False
-    is_sent: bool = False
-    need_review: bool = False
+    form_status: str = "created"
     last_form_sent_date: Optional[datetime] = None
 
     class Config:
@@ -80,20 +75,17 @@ class FormCreate(FormBase):
 
 
 class FormUpdate(BaseModel):
-    is_sent: Optional[bool] = None
-    is_controlled: Optional[bool] = None
-    need_review: Optional[bool] = None
+    form_status: Optional[str] = None
 
 
 class Form(FormBase):
     id: int
-    is_sent: bool = False
-    is_controlled: bool = False
-    need_review: bool = False
+    form_status: str = "created"
     created_date: datetime
-    send_date: Optional[datetime] = None
-    control_due_date: Optional[datetime] = None
+    assigned_date: Optional[datetime] = None
+    filled_date: Optional[datetime] = None
     controlled_date: Optional[datetime] = None
+    control_due_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True

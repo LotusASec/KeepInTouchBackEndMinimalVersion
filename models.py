@@ -25,10 +25,9 @@ class Animal(Base):
     _form_ids = Column("form_ids", Text, default="[]")  # JSON string for SQLite compatibility
     responsible_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    # Son form durumları (son formdan kopyalanacak)
-    is_controlled = Column(Boolean, default=False)
-    is_sent = Column(Boolean, default=False)
-    need_review = Column(Boolean, default=False)
+    # Son form durumu (son formdan kopyalanacak)
+    # Status: created, sent, filled, controlled
+    form_status = Column(String, default="created", nullable=False)
     last_form_sent_date = Column(DateTime, nullable=True)
     
     owner_name = Column(String, nullable=False)
@@ -58,16 +57,16 @@ class Form(Base):
     id = Column(Integer, primary_key=True, index=True)
     animal_id = Column(Integer, ForeignKey("animals.id", ondelete="CASCADE"), nullable=False)
     
-    # Form durumu
-    is_sent = Column(Boolean, default=False)
-    is_controlled = Column(Boolean, default=False)
-    need_review = Column(Boolean, default=False)
+    # Form durumu - Yeni akış
+    # Status: created, sent, filled, controlled
+    form_status = Column(String, default="created", nullable=False)
     
     # Tarihler
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
-    send_date = Column(DateTime, nullable=True)
-    control_due_date = Column(DateTime, nullable=True)  # send_date + 1 hafta
-    controlled_date = Column(DateTime, nullable=True)
+    assigned_date = Column(DateTime, nullable=True)  # Görev atama tarihi (is_sent olduğunda)
+    filled_date = Column(DateTime, nullable=True)  # Doldurma/dönüş tarihi (is_filled olduğunda)
+    controlled_date = Column(DateTime, nullable=True)  # İnceleme tarihi (is_controlled olduğunda)
+    control_due_date = Column(DateTime, nullable=True)  # İnceleme son tarih
 
     # Relationship
     animal = relationship("Animal", back_populates="forms")

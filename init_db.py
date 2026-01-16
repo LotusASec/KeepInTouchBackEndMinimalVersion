@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from database import engine, SessionLocal, Base
 from models import User, Animal, Form
 from auth import get_password_hash
+from routers.form import update_animal_from_latest_form
 import os
 
 
@@ -70,54 +71,78 @@ def create_sample_data(db: Session):
     db.commit()
     db.refresh(regular_user)
     
-    # Create sample animals
-    animal1 = Animal(
-        name="Minnoş",
-        responsible_user_id=regular_user.id,
-        owner_name="Ahmet Yılmaz",
-        owner_contact_number="+90 555 123 4567",
-        owner_contact_email="ahmet@example.com",
-        form_generation_period=30,
-        is_controlled=False,
-        is_sent=False
-    )
+    # Create 10 sample animals
+    animals = []
+    animal_names = ["Minnoş", "Paşa", "Karabaş", "Pamuk", "Misi", "Rex", "Kedi", "Köpek", "Tavşan", "Kuş"]
+    owners = [
+        ("Ahmet Yılmaz", "+90 555 123 4567", "ahmet@example.com"),
+        ("Ayşe Demir", "+90 555 987 6543", "ayse@example.com"),
+        ("Mehmet Kaya", "+90 555 456 7890", "mehmet@example.com"),
+        ("Fatma Çetin", "+90 555 789 0123", "fatma@example.com"),
+        ("Ali Akşin", "+90 555 234 5678", "ali@example.com"),
+        ("Zeynep Şahin", "+90 555 345 6789", "zeynep@example.com"),
+        ("Mustafa Yıldız", "+90 555 567 8901", "mustafa@example.com"),
+        ("Leyla Aydın", "+90 555 678 9012", "leyla@example.com"),
+        ("Osman Başar", "+90 555 890 1234", "osman@example.com"),
+        ("Seda Kürk", "+90 555 901 2345", "seda@example.com"),
+    ]
     
-    animal2 = Animal(
-        name="Paşa",
-        responsible_user_id=admin.id,
-        owner_name="Ayşe Demir",
-        owner_contact_number="+90 555 987 6543",
-        owner_contact_email="ayse@example.com",
-        form_generation_period=15,
-        is_controlled=True,
-        is_sent=True
-    )
+    for i, name in enumerate(animal_names):
+        owner_name, phone, email = owners[i]
+        animal = Animal(
+            name=name,
+            responsible_user_id=admin.id if i % 2 == 0 else regular_user.id,
+            owner_name=owner_name,
+            owner_contact_number=phone,
+            owner_contact_email=email,
+            form_generation_period=15 + (i * 5),  # 15, 20, 25, ... days
+            form_status="created"
+        )
+        db.add(animal)
+        db.commit()
+        db.refresh(animal)
+        animals.append(animal)
     
-    db.add(animal1)
-    db.add(animal2)
-    db.commit()
-    db.refresh(animal1)
-    db.refresh(animal2)
+    # Create 20 sample forms with various statuses
+    form_statuses = ["created", "sent", "filled", "controlled"]
+    form_count = 0
+    for i, animal in enumerate(animals):
+        # Create 2 forms per animal
+        for j in range(2):
+            status = form_statuses[(i + j) % len(form_statuses)]
+            form = Form(
+                animal_id=animal.id,
+                form_status=status
+            )
+            db.add(form)
+            db.commit()
+            db.refresh(form)
+            
+            # Update animal form_ids
+            current_ids = animal.form_ids or []
+            current_ids.append(form.id)
+            animal.form_ids = current_ids
+            db.commit()
+            
+            form_count += 1
+            
+            if form_count >= 20:
+                break
+        
+        if form_count >= 20:
+            break
     
-    # Create sample forms
-    form1 = Form(animal_id=animal1.id, is_sent=False, is_controlled=False)
-    form2 = Form(animal_id=animal2.id, is_sent=True, is_controlled=True)
-    
-    db.add(form1)
-    db.add(form2)
-    db.commit()
-    db.refresh(form1)
-    db.refresh(form2)
-    
-    # Update animal form_ids
-    animal1.form_ids = [form1.id]
-    animal2.form_ids = [form2.id]
-    db.commit()
+    # Animal'ları en son form status'larından güncelle
+    for animal in animals:
+        update_animal_from_latest_form(db, animal.id)
     
     print("✓ Sample data created:")
     print(f"  - User: operator1 (password: operator123)")
-    print(f"  - Animals: {animal1.name}, {animal2.name}")
-    print(f"  - Forms: 2 forms created")
+    print(f"  - Animals: {len(animals)} animals created")
+    print(f"  - Forms: {form_count} forms created with various statuses")
+    print(f"\n  Form statuses: created, sent, filled, controlled")
+    print(f"  Each animal has 2 forms with different statuses")
+
 
 
 def main():
