@@ -1,6 +1,6 @@
 """
 Database initialization script
-Creates tables and adds initial admin user
+Creates tables and adds initial admin user with staggered historical dates
 """
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal, Base
@@ -8,26 +8,27 @@ from models import User, Animal, Form
 from auth import get_password_hash
 from routers.form import update_animal_from_latest_form
 import os
-
+import random
+from datetime import datetime, timedelta
 
 def init_database(force_recreate: bool = False):
-    """Initialize database and create tables"""
+    """Veritabanını ilklendirir ve tabloları oluşturur"""
     if force_recreate and os.path.exists("animal_tracking.db"):
-        print("Removing existing database...")
+        print("Mevcut veritabanı kaldırılıyor...")
         os.remove("animal_tracking.db")
-        print("✓ Old database removed")
+        print("✓ Eski veritabanı silindi")
     
-    print("Creating database tables...")
+    print("Veritabanı tabloları oluşturuluyor...")
     Base.metadata.create_all(bind=engine)
-    print("✓ Tables created successfully")
+    print("✓ Tablolar başarıyla oluşturuldu")
 
 
 def create_admin_user(db: Session, username: str = "admin", password: str = "admin123"):
-    """Create initial admin user if not exists"""
+    """Eğer yoksa başlangıç admin kullanıcısını oluşturur"""
     existing_user = db.query(User).filter(User.name == username).first()
     
     if existing_user:
-        print(f"✓ Admin user '{username}' already exists")
+        print(f"✓ Admin kullanıcısı '{username}' zaten mevcut")
         return existing_user
     
     admin_user = User(
@@ -39,29 +40,26 @@ def create_admin_user(db: Session, username: str = "admin", password: str = "adm
     db.commit()
     db.refresh(admin_user)
     
-    print(f"✓ Admin user created:")
-    print(f"  Username: {username}")
-    print(f"  Password: {password}")
-    print(f"  ⚠️  IMPORTANT: Change the password after first login!")
+    print(f"✓ Admin kullanıcısı oluşturuldu:")
+    print(f"  Kullanıcı Adı: {username}")
+    print(f"  Şifre: {password}")
+    print(f"  ⚠️  ÖNEMLİ: İlk girişten sonra şifreyi değiştirin!")
     
     return admin_user
 
 
 def create_sample_data(db: Session):
-    """Create some sample data for testing (optional)"""
-    # Check if admin exists
+    """15-90 gün aralığında değişen tarihlerle örnek veriler oluşturur"""
     admin = db.query(User).filter(User.role == "admin").first()
     if not admin:
-        print("No admin user found. Run create_admin_user first.")
+        print("Admin kullanıcısı bulunamadı.")
         return
     
-    # Check if sample data already exists
-    existing_animals = db.query(Animal).count()
-    if existing_animals > 0:
-        print("✓ Sample data already exists")
+    if db.query(Animal).count() > 0:
+        print("✓ Örnek veriler zaten mevcut")
         return
     
-    # Create a regular user
+    # Operatör kullanıcısı
     regular_user = User(
         name="operator1",
         password=get_password_hash("operator123"),
@@ -71,9 +69,7 @@ def create_sample_data(db: Session):
     db.commit()
     db.refresh(regular_user)
     
-    # Create 10 sample animals
-    animals = []
-    animal_names = ["Minnoş", "Paşa", "Karabaş", "Pamuk", "Misi", "Rex", "Kedi", "Köpek", "Tavşan", "Kuş"]
+    animal_names = ["Minnoş", "Paşa", "Karabaş", "Pamuk", "Misi", "Rex", "Çıtır", "Gümüş", "Gofret", "Zeytin"]
     owners = [
         ("Ahmet Yılmaz", "+90 555 123 4567", "ahmet@example.com"),
         ("Ayşe Demir", "+90 555 987 6543", "ayse@example.com"),
@@ -87,102 +83,98 @@ def create_sample_data(db: Session):
         ("Seda Kürk", "+90 555 901 2345", "seda@example.com"),
     ]
     
-    for i, name in enumerate(animal_names):
+    form_statuses = ["created", "sent", "filled", "controlled"]
+    
+    print("Örnek hayvanlar ve geçmişe dönük formlar oluşturuluyor...")
+    
+    for i in range(10):
+        name = animal_names[i]
         owner_name, phone, email = owners[i]
+        
         animal = Animal(
             name=name,
             responsible_user_id=admin.id if i % 2 == 0 else regular_user.id,
             owner_name=owner_name,
             owner_contact_number=phone,
             owner_contact_email=email,
-            form_generation_period=15 + (i * 5),  # 15, 20, 25, ... days
+            form_generation_period=(i % 6) + 1,
             form_status="created"
         )
         db.add(animal)
         db.commit()
         db.refresh(animal)
-        animals.append(animal)
-    
-    # Create 20 sample forms with various statuses
-    form_statuses = ["created", "sent", "filled", "controlled"]
-    form_count = 0
-    for i, animal in enumerate(animals):
-        # Create 2 forms per animal
-        for j in range(2):
-            status = form_statuses[(i + j) % len(form_statuses)]
-            form = Form(
-                animal_id=animal.id,
-                form_status=status
-            )
-            db.add(form)
-            db.commit()
-            db.refresh(form)
-            
-            # Update animal form_ids
-            current_ids = animal.form_ids or []
-            current_ids.append(form.id)
-            animal.form_ids = current_ids
-            db.commit()
-            
-            form_count += 1
-            
-            if form_count >= 20:
-                break
+
+        # 1 ile 5 arasında rastgele sayıda form oluştur
+        num_forms = random.randint(1, 5)
         
-        if form_count >= 20:
-            break
-    
-    # Animal'ları en son form status'larından güncelle
-    for animal in animals:
+        # 15 ile 90 gün arasında rastgele tarihler oluştur ve sırala (eskiden yeniye)
+        # days_ago listesi örneği: [85, 50, 20] -> 85 gün önce en eski, 20 gün önce en yeni
+        days_ago_list = sorted([random.randint(15, 90) for _ in range(num_forms)], reverse=True)
+
+        for idx, days_ago in enumerate(days_ago_list):
+            form_date = datetime.now() - timedelta(days=days_ago)
+            
+            # Form durumunu sırayla veya rastgele seç
+            status = form_statuses[idx % len(form_statuses)]
+            
+            new_form = Form(
+                animal_id=animal.id,
+                form_status=status,
+                created_date=form_date 
+            )
+            db.add(new_form)
+            db.commit()
+            db.refresh(new_form)
+            
+            # Hayvanın form_ids listesini güncelle
+            current_ids = animal.form_ids or []
+            current_ids.append(new_form.id)
+            animal.form_ids = current_ids
+            
+            # En son oluşturulan formun tarihini hayvana işle
+            animal.last_form_created_date = form_date
+            db.commit()
+
+        # Hayvanın genel durumunu en son forma göre güncelle
         update_animal_from_latest_form(db, animal.id)
     
-    print("✓ Sample data created:")
-    print(f"  - User: operator1 (password: operator123)")
-    print(f"  - Animals: {len(animals)} animals created")
-    print(f"  - Forms: {form_count} forms created with various statuses")
-    print(f"\n  Form statuses: created, sent, filled, controlled")
-    print(f"  Each animal has 2 forms with different statuses")
-
+    print(f"✓ Başarıyla {len(animal_names)} hayvan ve geçmişe dönük formlar oluşturuldu.")
+    print("  Tarih Aralığı: Bugünün 15 gün öncesi ile 90 gün öncesi arası.")
 
 
 def main():
-    """Main initialization function"""
+    """Ana kurulum fonksiyonu"""
     print("\n" + "="*50)
-    print("  Database Initialization")
+    print("  Veritabanı Yapılandırma Sistemi")
     print("="*50 + "\n")
     
-    # Initialize database
-    # Check if database exists and ask to recreate
     db_exists = os.path.exists("animal_tracking.db")
     force_recreate = False
     
     if db_exists:
-        print("\n" + "⚠️ "*25)
-        print("Database already exists!")
-        response = input("Do you want to DELETE and recreate it? (y/n): ").strip().lower()
-        if response == 'y':
+        print("⚠️  Veritabanı zaten mevcut!")
+        response = input("Silip yeniden oluşturmak istiyor musunuz? (e/h): ").strip().lower()
+        if response == 'e':
             force_recreate = True
-        print("="*50)
+        print("-" * 50)
     
     init_database(force_recreate=force_recreate)
     
-    # Create admin user
     db = SessionLocal()
     try:
         create_admin_user(db)
         
-        # Ask if user wants to create sample data
         print("\n" + "-"*50)
-        response = input("Create sample data for testing? (y/n): ").strip().lower()
-        if response == 'y':
+        response = input("Test için örnek veriler oluşturulsun mu? (e/h): ").strip().lower()
+        if response == 'e':
             create_sample_data(db)
         
         print("\n" + "="*50)
-        print("  ✓ Initialization Complete!")
+        print("  ✓ İşlem Başarıyla Tamamlandı!")
         print("="*50 + "\n")
         
     except Exception as e:
-        print(f"\n✗ Error during initialization: {e}")
+        print(f"\n✗ Hata oluştu: {e}")
         db.rollback()
     finally:
         db.close()

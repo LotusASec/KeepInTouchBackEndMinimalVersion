@@ -44,11 +44,11 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
         if animal.form_generation_period is None or animal.form_generation_period <= 0:
             continue
 
-        last_sent_date = animal.last_form_sent_date
-        if last_sent_date is None:
+        last_created_date = animal.last_form_created_date
+        if last_created_date is None:
             should_create = True
         else:
-            next_form_date = last_sent_date + relativedelta(months=animal.form_generation_period)
+            next_form_date = last_created_date + relativedelta(months=animal.form_generation_period)
             should_create = now >= next_form_date
 
         if should_create:
@@ -65,10 +65,14 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
             current_ids = animal.form_ids or []
             current_ids.append(new_form.id)
             animal.form_ids = current_ids
+            animal.last_form_created_date = new_form.created_date
             db.commit()
 
             created_forms.append(new_form)
-
+        
+    for idx, animal in enumerate(animals):
+        update_animal_from_latest_form(db,idx)
+    
     return created_forms
 
 
@@ -95,6 +99,7 @@ def create_form(
     current_form_ids = db_animal.form_ids
     current_form_ids.append(db_form.id)
     db_animal.form_ids = current_form_ids
+    db_animal.last_form_created_date = db_form.created_date
     db.commit()
     
     return db_form

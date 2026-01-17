@@ -53,6 +53,7 @@ class AnimalUpdate(BaseModel):
     owner_contact_email: Optional[EmailStr] = None
     form_generation_period: Optional[int] = None
     last_form_sent_date: Optional[datetime] = None
+    last_form_created_date: Optional[datetime] = None
 
 
 class Animal(AnimalBase):
@@ -60,6 +61,7 @@ class Animal(AnimalBase):
     form_ids: List[int] = []
     form_status: str = "created"
     last_form_sent_date: Optional[datetime] = None
+    last_form_created_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True

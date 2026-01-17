@@ -133,6 +133,7 @@ def create_form_for_animal(
     current_form_ids = db_animal.form_ids  # Get current list
     current_form_ids.append(db_form.id)
     db_animal.form_ids = current_form_ids  # Set back to trigger setter
+    db_animal.last_form_created_date = db_form.created_date
     db.commit()
     db.refresh(db_animal)
     

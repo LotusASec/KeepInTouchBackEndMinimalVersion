@@ -29,6 +29,7 @@ class Animal(Base):
     # Status: created, sent, filled, controlled
     form_status = Column(String, default="created", nullable=False)
     last_form_sent_date = Column(DateTime, nullable=True)
+    last_form_created_date = Column(DateTime, nullable=True)
     
     owner_name = Column(String, nullable=False)
     owner_contact_number = Column(String, nullable=False)
