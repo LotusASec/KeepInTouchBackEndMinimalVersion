@@ -74,8 +74,8 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
 
             created_forms.append(new_form)
         
-    for idx, animal in enumerate(animals):
-        update_animal_from_latest_form(db, idx + 1)
+    for animal in animals:
+        update_animal_from_latest_form(db, animal.id)
     
     return created_forms
 

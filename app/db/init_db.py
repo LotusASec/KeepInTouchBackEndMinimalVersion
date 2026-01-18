@@ -4,8 +4,12 @@ Creates tables and adds initial admin user with staggered historical dates
 """
 from sqlalchemy.orm import Session
 import os
+import sys
 import random
 from datetime import datetime, timedelta
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from app.db.database import engine, SessionLocal, Base
 from app.models.user import User
