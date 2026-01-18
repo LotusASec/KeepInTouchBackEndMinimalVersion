@@ -1,26 +1,30 @@
+"""Form router - form management and periodic generation endpoints"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-import models
-import schemas
-from database import get_db
-from auth import get_current_user
+
+from app.db.database import get_db
+from app.models.user import User
+from app.models.animal import Animal
+from app.models.form import Form
+from app.schemas.form import Form as FormSchema, FormCreate, FormUpdate
+from app.auth.auth import get_current_user
 
 router = APIRouter(prefix="/forms", tags=["forms"])
 
 
 def update_animal_from_latest_form(db: Session, animal_id: int):
     """Hayvanın durumunu en son formdan güncelle - son form'un status'unu alır"""
-    animal = db.query(models.Animal).filter(models.Animal.id == animal_id).first()
+    animal = db.query(Animal).filter(Animal.id == animal_id).first()
     if not animal:
         return
     
     # En son formu getir (ID veya created_date'e göre)
-    latest_form = db.query(models.Form).filter(
-        models.Form.animal_id == animal_id
-    ).order_by(models.Form.id.desc()).first()
+    latest_form = db.query(Form).filter(
+        Form.animal_id == animal_id
+    ).order_by(Form.id.desc()).first()
     
     if latest_form:
         # En son formun durumunu hayvana aktar
@@ -34,11 +38,11 @@ def update_animal_from_latest_form(db: Session, animal_id: int):
         db.refresh(animal)
 
 
-def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) -> List[models.Form]:
+def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) -> List[Form]:
     """form_generation_period süresi dolan hayvanlar için yeni form üret"""
     now = now or datetime.utcnow()
-    created_forms: List[models.Form] = []
-    animals = db.query(models.Animal).all()
+    created_forms: List[Form] = []
+    animals = db.query(Animal).all()
 
     for animal in animals:
         if animal.form_generation_period is None or animal.form_generation_period <= 0:
@@ -52,7 +56,7 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
             should_create = now >= next_form_date
 
         if should_create:
-            new_form = models.Form(
+            new_form = Form(
                 animal_id=animal.id,
                 form_status="created",
                 created_date=now
@@ -71,26 +75,26 @@ def run_periodic_form_generation(db: Session, now: Optional[datetime] = None) ->
             created_forms.append(new_form)
         
     for idx, animal in enumerate(animals):
-        update_animal_from_latest_form(db,idx+1)
+        update_animal_from_latest_form(db, idx + 1)
     
     return created_forms
 
 
-@router.post("/", response_model=schemas.Form, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=FormSchema, status_code=status.HTTP_201_CREATED)
 def create_form(
-    form: schemas.FormCreate,
+    form: FormCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Yeni form oluştur"""
     # Verify animal exists
-    db_animal = db.query(models.Animal).filter(
-        models.Animal.id == form.animal_id
+    db_animal = db.query(Animal).filter(
+        Animal.id == form.animal_id
     ).first()
     if not db_animal:
         raise HTTPException(status_code=404, detail="Animal not found")
     
-    db_form = models.Form(animal_id=form.animal_id)
+    db_form = Form(animal_id=form.animal_id)
     db.add(db_form)
     db.commit()
     db.refresh(db_form)
@@ -105,51 +109,51 @@ def create_form(
     return db_form
 
 
-@router.get("/{form_id}", response_model=schemas.Form)
+@router.get("/{form_id}", response_model=FormSchema)
 def read_form(
     form_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """ID'ye göre form bilgilerini getir"""
-    db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
+    db_form = db.query(Form).filter(Form.id == form_id).first()
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
     return db_form
 
 
-@router.post("/by-ids", response_model=List[schemas.Form])
+@router.post("/by-ids", response_model=List[FormSchema])
 def read_forms_by_ids(
     form_ids: List[int],
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Çoklu formu liste olarak verilen ID listesinden çek"""
-    db_forms = db.query(models.Form).filter(models.Form.id.in_(form_ids)).all()
+    db_forms = db.query(Form).filter(Form.id.in_(form_ids)).all()
     return db_forms
 
 
-@router.get("/animal/{animal_id}", response_model=List[schemas.Form])
+@router.get("/animal/{animal_id}", response_model=List[FormSchema])
 def read_forms_by_animal(
     animal_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Belirli bir hayvana ait tüm formları getir"""
-    db_animal = db.query(models.Animal).filter(models.Animal.id == animal_id).first()
+    db_animal = db.query(Animal).filter(Animal.id == animal_id).first()
     if db_animal is None:
         raise HTTPException(status_code=404, detail="Animal not found")
     
-    db_forms = db.query(models.Form).filter(models.Form.animal_id == animal_id).all()
+    db_forms = db.query(Form).filter(Form.animal_id == animal_id).all()
     return db_forms
 
 
-@router.put("/{form_id}", response_model=schemas.Form)
+@router.put("/{form_id}", response_model=FormSchema)
 def update_form(
     form_id: int,
-    form_update: schemas.FormUpdate,
+    form_update: FormUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Form bilgilerini güncelle - Her durum değişiminde otomatik tarih eklenir
     
@@ -158,7 +162,7 @@ def update_form(
     2. form_status=filled → filled_date set (dönüş alındı)
     3. form_status=controlled → controlled_date set (incelendi)
     """
-    db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
+    db_form = db.query(Form).filter(Form.id == form_id).first()
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
     
@@ -197,18 +201,18 @@ def update_form(
 def delete_form(
     form_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Form sil"""
-    db_form = db.query(models.Form).filter(models.Form.id == form_id).first()
+    db_form = db.query(Form).filter(Form.id == form_id).first()
     if db_form is None:
         raise HTTPException(status_code=404, detail="Form not found")
     
     animal_id = db_form.animal_id
     
     # Remove form_id from animal's form_ids list
-    db_animal = db.query(models.Animal).filter(
-        models.Animal.id == animal_id
+    db_animal = db.query(Animal).filter(
+        Animal.id == animal_id
     ).first()
     if db_animal and db_animal.form_ids and form_id in db_animal.form_ids:
         current_form_ids = db_animal.form_ids
@@ -225,10 +229,10 @@ def delete_form(
     return None
 
 
-@router.post("/generate-periodic", response_model=List[schemas.Form])
+@router.post("/generate-periodic", response_model=List[FormSchema])
 def generate_periodic_forms(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Period süresi dolmuş hayvanlar için yeni form oluştur.
@@ -237,36 +241,35 @@ def generate_periodic_forms(
     return run_periodic_form_generation(db)
 
 
-@router.get("/pending-send", response_model=List[schemas.Form])
+@router.get("/pending-send", response_model=List[FormSchema])
 def get_forms_pending_send(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Henüz görev verilmemiş formları getir (form_status=created)"""
-    forms = db.query(models.Form).filter(models.Form.form_status == "created").all()
+    forms = db.query(Form).filter(Form.form_status == "created").all()
     return forms
 
 
-@router.get("/pending-control", response_model=List[schemas.Form])
+@router.get("/pending-control", response_model=List[FormSchema])
 def get_forms_pending_control(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Kontrol edilmesi gereken formları getir (form_status=filled)"""
-    forms = db.query(models.Form).filter(models.Form.form_status == "filled").all()
+    forms = db.query(Form).filter(Form.form_status == "filled").all()
     return forms
 
 
-@router.get("/pending-fill", response_model=List[schemas.Form])
+@router.get("/pending-fill", response_model=List[FormSchema])
 def get_forms_pending_fill(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Doldurulması gereken formları getir (form_status=sent ve control_due_date'ten önce)"""
     now = datetime.utcnow()
-    forms = db.query(models.Form).filter(
-        models.Form.form_status == "sent",
-        models.Form.control_due_date > now
+    forms = db.query(Form).filter(
+        Form.form_status == "sent",
+        Form.control_due_date > now
     ).all()
     return forms
-

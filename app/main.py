@@ -1,18 +1,19 @@
+"""Main FastAPI application"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
-import os
-import models
-from database import engine, SessionLocal
-from routers import user, animal, form
+
+from app.core.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, FORM_GEN_INTERVAL_HOURS
+from app.db.database import engine, SessionLocal, Base
+from app.api.routers import user, animal, form
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Hayvan Sahiplendirme Takip Sistemi",
-    description="Hayvan sahiplendirme derneği için takip ve form yönetim sistemi",
-    version="1.0.0",
+    title=APP_TITLE,
+    description=APP_DESCRIPTION,
+    version=APP_VERSION,
     swagger_ui_parameters={"persistAuthorization": True},
 )
 
@@ -36,6 +37,7 @@ scheduler = BackgroundScheduler(timezone="UTC")
 
 
 def run_periodic_job():
+    """Run periodic form generation task"""
     db = SessionLocal()
     try:
         form.run_periodic_form_generation(db)
@@ -45,27 +47,35 @@ def run_periodic_job():
 
 @app.on_event("startup")
 def start_scheduler():
-    # Interval configurable via env; default 12 hours
-    interval_hours = float(os.getenv("FORM_GEN_INTERVAL_HOURS", "12"))
-    scheduler.add_job(run_periodic_job, "interval", hours=interval_hours, max_instances=1, coalesce=True)
+    """Start background scheduler on application startup"""
+    scheduler.add_job(
+        run_periodic_job,
+        "interval",
+        hours=FORM_GEN_INTERVAL_HOURS,
+        max_instances=1,
+        coalesce=True
+    )
     scheduler.start()
 
 
 @app.on_event("shutdown")
 def stop_scheduler():
+    """Stop background scheduler on application shutdown"""
     if scheduler.running:
         scheduler.shutdown(wait=False)
 
 
 @app.get("/")
 def root():
+    """Root endpoint"""
     return {
         "message": "Hayvan Sahiplendirme Takip Sistemi API",
-        "version": "1.0.0",
+        "version": APP_VERSION,
         "docs": "/docs"
     }
 
 
 @app.get("/health")
 def health_check():
+    """Health check endpoint"""
     return {"status": "healthy"}
